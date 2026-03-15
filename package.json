@@ -1,0 +1,36 @@
+{
+  "name": "@jetstackai/cli",
+  "version": "0.1.0",
+  "description": "JetStack AI CLI - Manage HubSpot assets programmatically",
+  "type": "module",
+  "bin": {
+    "jetstackai": "./dist/index.js"
+  },
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "commander": "^13.1.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2",
+    "@types/node": "^22.0.0"
+  },
+  "files": ["dist", "README.md", "LICENSE"],
+  "keywords": ["jetstackai", "hubspot", "cli", "asset-management"],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jetstackai/jetstackai-cli.git"
+  },
+  "homepage": "https://github.com/jetstackai/jetstackai-cli",
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
