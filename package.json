@@ -1,6 +1,6 @@
 {
   "name": "@jetstackai/cli",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "JetStack AI CLI - Manage HubSpot assets programmatically",
   "type": "module",
   "bin": {
@@ -19,7 +19,7 @@
     "typescript": "^5.7.2",
     "@types/node": "^22.0.0"
   },
-  "files": ["dist", "README.md", "LICENSE"],
+  "files": ["dist", "README.md", "LICENSE", "claude-code-setup"],
   "keywords": ["jetstackai", "hubspot", "cli", "asset-management"],
   "license": "MIT",
   "repository": {
