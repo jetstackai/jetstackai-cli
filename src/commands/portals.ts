@@ -8,7 +8,15 @@ interface Portal {
   name: string;
   portalId: string;
   status: string;
-  connected: boolean;
+  connectedBy: string;
+  connectedAt: string;
+  connectionType: string;
+}
+
+interface PortalsResponse {
+  items: Portal[];
+  total: number;
+  hasMore: boolean;
 }
 
 export const portalsCommand = createCommand("portals").description(
@@ -26,21 +34,23 @@ portalsCommand
     const config = requireConfig();
     const format = options.format || config.defaultFormat || "json";
 
-    const portals = await apiRequest<Portal[]>("GET", "/v1/portals");
+    const response = await apiRequest<PortalsResponse>("GET", "/v1/portals");
+    const portals = response.items ?? [];
 
     if (format === "table") {
       console.log(bold("HubSpot Portals\n"));
       printTable(
-        ["ID", "Name", "Portal ID", "Status", "Connected"],
+        ["Name", "Portal ID", "Status", "Connected By", "Connected At"],
         portals.map((p) => [
-          p.id,
           p.name,
           p.portalId,
           p.status,
-          p.connected ? "Yes" : "No",
+          p.connectedBy,
+          p.connectedAt ? new Date(p.connectedAt).toLocaleDateString() : "-",
         ])
       );
+      console.log(`\nTotal: ${response.total} portal(s)`);
     } else {
-      printJson(portals);
+      printJson(response);
     }
   });

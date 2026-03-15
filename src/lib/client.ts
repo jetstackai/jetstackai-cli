@@ -2,8 +2,21 @@ import { requireConfig, decodeInstanceId } from "./config.js";
 
 interface ApiResponse<T> {
   data: T;
-  error?: string;
+  error?: { code: string; message: string } | string;
   message?: string;
+}
+
+function extractError(body: ApiResponse<unknown>): string {
+  if (body.error) {
+    if (typeof body.error === "object" && body.error.message) {
+      return body.error.message;
+    }
+    if (typeof body.error === "string") {
+      return body.error;
+    }
+  }
+  if (body.message) return body.message;
+  return "Unknown error";
 }
 
 export async function apiRequest<T>(
@@ -36,11 +49,7 @@ export async function apiRequest<T>(
       let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
       try {
         const errorBody = (await response.json()) as ApiResponse<unknown>;
-        if (errorBody.error) {
-          errorMessage = errorBody.error;
-        } else if (errorBody.message) {
-          errorMessage = errorBody.message;
-        }
+        errorMessage = extractError(errorBody);
       } catch {
         // Use default error message
       }
@@ -97,7 +106,7 @@ export async function apiRequestRaw<T>(
       return {
         ok: false,
         status: response.status,
-        error: json.error || json.message || response.statusText,
+        error: extractError(json),
       };
     }
 
