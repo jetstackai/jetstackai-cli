@@ -143,7 +143,7 @@ Credentials are stored locally at `~/.jetstackai/config.json`. Use `jetstackai a
 
 ## Documentation
 
-For full documentation, visit [https://jetstack.ai/docs](https://jetstack,ai/docs).
+For full documentation, visit [https://jetstack.ai/docs](https://jetstack.ai/docs).
 
 ## License
 
