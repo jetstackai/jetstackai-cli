@@ -84,6 +84,7 @@ Other available commands:
 - `/jetstack-deploy` — Guided deploy workflow
 - `/jetstack-assets` — Explore your asset library
 - `/jetstack-modules` — Explore implementation modules
+- `/jetstack-audit-report` — Build a McKinsey-level audit report from completed audit data
 
 ## How It Works
 

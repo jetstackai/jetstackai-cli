@@ -79,6 +79,41 @@ jetstackai tasks list --status running   # Filter by status
 jetstackai tasks get <id>                # Get task details
 ```
 
+### Audits (HubSpot Portal Health Assessment)
+```bash
+jetstackai audits list-blocks --format table                    # List all 28 audit blocks
+jetstackai audits list-blocks --report-type SIMPLE              # Blocks for public API audits
+jetstackai audits list-templates --format table                 # List available templates
+jetstackai audits get-template <id>                             # Get template details
+jetstackai audits create-template --name "My Audit" --blocks DEAL_PIPELINE,EMAIL_MARKETING --report-type SIMPLE
+                                                                # Create a custom template
+jetstackai audits run --name "Q1 Audit" --template <id> --portal <id>
+                                                                # Start an audit
+jetstackai audits run --name "Q1 Audit" --template <id> --portal <id> --watch
+                                                                # Start and watch until complete
+jetstackai audits status <auditRunId>                           # Check audit progress
+jetstackai audits status <auditRunId> --watch                   # Poll until complete
+jetstackai audits data <auditRunId>                             # Fetch full audit results
+```
+
+**MCP Tools (for Claude integration):**
+If connected via MCP server, the following tools are available:
+- `list_audit_blocks` — discover available blocks for template creation
+- `list_audit_templates` / `get_audit_template` — browse and inspect templates
+- `create_audit_template` — create a template from block IDs
+- `run_audit` — start an audit (portal name/tier auto-resolved)
+- `get_audit_status` — poll audit progress (created → processing → completed)
+- `get_audit_data` — fetch full report with block definitions, data points, health scores
+
+## Audit Block Categories
+The 28 audit blocks are organized into 6 categories:
+- **General** (6): Executive Dashboard, Portal Overview, User Management, Data Quality, Property Management, Integration Health
+- **Sales** (5): Deal Pipeline, Deal Performance, Sales Activity, Lead Management, Quotes & Products
+- **Marketing** (6): Email Marketing, Forms & Conversion, Content Performance, Campaign Management, List Segmentation, Social Media
+- **Service** (4): Ticket Pipeline, Resolution Metrics, Customer Feedback, Knowledge Base
+- **Automation** (3): Workflow Health, Sequence Performance, Lead Scoring
+- **Reporting** (3): Dashboard Health, Report Quality, Analytics Config
+
 ## Asset Types
 The following HubSpot asset types are supported:
 
@@ -108,8 +143,18 @@ The following HubSpot asset types are supported:
 3. `jetstackai deploy start --source <src> --target <tgt> --assets <json> --mappings <json>`
 4. `jetstackai deploy watch <taskId>` — wait for completion
 
+### Run an audit and build a report
+1. `jetstackai audits list-blocks --report-type SIMPLE --format table` — see available blocks
+2. `jetstackai audits list-templates --format table` — see existing templates (or create one)
+3. `jetstackai audits run --name "Q1 Audit" --template <id> --portal <id> --watch` — run and wait
+4. `jetstackai audits data <auditRunId>` — fetch results
+5. Use `/jetstack-audit-report` to build a McKinsey-level report from the data
+
+**Via MCP tools:** Use `list_audit_blocks` → `run_audit` → `get_audit_status` (poll) → `get_audit_data` → build report.
+
 ## Tips
 - Always verify connectivity first: `jetstackai auth status`
 - Use `--format table` when exploring, default JSON when automating
 - Import and deploy are async — always check status or use `watch`
 - Asset IDs from `assets list` are Firestore IDs; HubSpot IDs are in the details
+- For audits, only SIMPLE report type works via API/CLI — ADVANCED requires the Chrome extension
