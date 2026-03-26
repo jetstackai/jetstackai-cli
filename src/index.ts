@@ -10,6 +10,7 @@ import { modulesCommand } from "./commands/modules.js";
 import { deployCommand } from "./commands/deploy.js";
 import { mappingCommand } from "./commands/mapping.js";
 import { tasksCommand } from "./commands/tasks.js";
+import { auditsCommand } from "./commands/audits.js";
 
 const program = new Command();
 
@@ -21,7 +22,7 @@ program
     "JetStack AI dashboard (Settings > API Keys), then use the\n" +
     "commands below to browse, import, and deploy HubSpot assets."
   )
-  .version("0.2.0");
+  .version("0.3.0");
 
 program.addHelpText(
   "after",
@@ -42,6 +43,15 @@ Workflow:
  10. jetstackai deploy start --name ... --source ... --target ... --assets ... --mapping '{...}'
                                                  Deploy assets to target portal with mapping
  11. jetstackai deploy status <taskId> --watch   Watch deployment progress
+
+Audit Workflow:
+  1. jetstackai audits list-blocks --format table  List available audit blocks
+  2. jetstackai audits list-templates               List existing templates
+  3. jetstackai audits create-template --name "My Audit" --blocks DEAL_PIPELINE,EMAIL_MARKETING --report-type SIMPLE
+                                                    Create a custom template
+  4. jetstackai audits run --name "Q1 Audit" --template <id> --portal <id> --watch
+                                                    Run audit and watch progress
+  5. jetstackai audits data <auditRunId>            Fetch audit results
 
 Supported asset types for browse:
   workflows, forms, emails, lists, pipelines, pages, templates,
@@ -64,5 +74,6 @@ program.addCommand(modulesCommand);
 program.addCommand(deployCommand);
 program.addCommand(mappingCommand);
 program.addCommand(tasksCommand);
+program.addCommand(auditsCommand);
 
 program.parse();
