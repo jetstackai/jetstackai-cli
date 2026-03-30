@@ -11,18 +11,19 @@ import { deployCommand } from "./commands/deploy.js";
 import { mappingCommand } from "./commands/mapping.js";
 import { tasksCommand } from "./commands/tasks.js";
 import { auditsCommand } from "./commands/audits.js";
+import { salesforceCommand } from "./commands/salesforce.js";
 
 const program = new Command();
 
 program
   .name("jetstackai")
   .description(
-    "JetStack AI CLI - Manage HubSpot assets programmatically.\n\n" +
+    "JetStack AI CLI - Manage CRM assets programmatically.\n\n" +
     "Authenticate with an Instance ID and Access Token from your\n" +
     "JetStack AI dashboard (Settings > API Keys), then use the\n" +
-    "commands below to browse, import, and deploy HubSpot assets."
+    "commands below to browse, import, and deploy CRM assets."
   )
-  .version("0.3.0");
+  .version("0.4.0");
 
 program.addHelpText(
   "after",
@@ -75,5 +76,6 @@ program.addCommand(deployCommand);
 program.addCommand(mappingCommand);
 program.addCommand(tasksCommand);
 program.addCommand(auditsCommand);
+program.addCommand(salesforceCommand);
 
 program.parse();

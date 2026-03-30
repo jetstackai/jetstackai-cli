@@ -5,6 +5,7 @@ import {
   saveConfig,
   deleteConfig,
   requireConfig,
+  isLegacyInstanceId,
   type CliConfig,
 } from "../lib/config.js";
 import { apiRequestRaw } from "../lib/client.js";
@@ -38,37 +39,26 @@ interface HealthResponse {
 }
 
 /**
- * Validate that an Instance ID is valid base64 that decodes to a URL starting with http.
+ * Validate an Instance ID.
+ * Accepts both new short IDs ("leanstack") and legacy base64 IDs.
  */
 function validateInstanceId(instanceId: string): {
   valid: boolean;
   error?: string;
 } {
-  try {
-    const decoded = Buffer.from(instanceId, "base64").toString("utf-8");
-    if (!decoded.startsWith("http")) {
-      return {
-        valid: false,
-        error:
-          "Instance ID does not appear valid. Please copy it from your JetStack AI dashboard.",
-      };
-    }
+  // New short IDs: alphanumeric + hyphens, 2-50 chars
+  if (/^[a-zA-Z0-9][a-zA-Z0-9-]{0,48}[a-zA-Z0-9]$/.test(instanceId) || instanceId.length === 1) {
     return { valid: true };
-  } catch {
-    return {
-      valid: false,
-      error:
-        "Instance ID is not valid. Please copy it from your JetStack AI dashboard.",
-    };
   }
-}
-
-/**
- * Mask an Instance ID for display: show first 8 and last 4 chars.
- */
-function maskInstanceId(instanceId: string): string {
-  if (instanceId.length <= 16) return instanceId.substring(0, 4) + "...";
-  return instanceId.substring(0, 8) + "..." + instanceId.slice(-4);
+  // Legacy base64 IDs
+  if (isLegacyInstanceId(instanceId)) {
+    return { valid: true };
+  }
+  return {
+    valid: false,
+    error:
+      "Instance ID does not appear valid. Please copy it from your JetStack AI dashboard.",
+  };
 }
 
 export const authCommand = createCommand("auth").description(
@@ -165,8 +155,8 @@ authCommand
     console.log(bold("Connection Status\n"));
 
     const tokenPrefix = config.accessToken.substring(0, 8) + "...";
+    console.log(`  Instance ID:  ${dim(config.instanceId)}`);
     console.log(`  Access Token: ${dim(tokenPrefix)}`);
-    console.log(`  Instance ID:  ${dim(maskInstanceId(config.instanceId))}`);
     console.log("");
 
     const result = await apiRequestRaw<HealthResponse>(
@@ -201,7 +191,7 @@ authCommand
     const tokenPrefix = config.accessToken.substring(0, 8) + "...";
 
     console.log(bold("Current Configuration\n"));
-    console.log(`  Instance ID:    ${dim(maskInstanceId(config.instanceId))}`);
+    console.log(`  Instance ID:    ${dim(config.instanceId)}`);
     console.log(`  Access Token:   ${dim(tokenPrefix)}`);
     console.log(`  Default Format: ${dim(config.defaultFormat)}`);
   });

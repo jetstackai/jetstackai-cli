@@ -2,6 +2,12 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 
+/**
+ * API Gateway URL — all requests route through here.
+ * The gateway maps Instance IDs to tenant backends.
+ */
+export const API_GATEWAY_URL = "https://api.jetstack.ai";
+
 export interface CliConfig {
   instanceId: string;
   accessToken: string;
@@ -57,8 +63,21 @@ export function requireConfig(): CliConfig {
 }
 
 /**
- * Decode the Instance ID (base64) to get the actual server URL.
+ * Check if an Instance ID is a legacy base64-encoded URL.
  */
-export function decodeInstanceId(instanceId: string): string {
+export function isLegacyInstanceId(instanceId: string): boolean {
+  if (instanceId.length < 20) return false;
+  try {
+    const decoded = Buffer.from(instanceId, "base64").toString("utf-8");
+    return decoded.startsWith("http://") || decoded.startsWith("https://");
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Decode a legacy base64 Instance ID to get the backend URL.
+ */
+export function decodeLegacyInstanceId(instanceId: string): string {
   return Buffer.from(instanceId, "base64").toString("utf-8");
 }

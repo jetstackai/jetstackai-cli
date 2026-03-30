@@ -1,12 +1,25 @@
-import { requireConfig, decodeInstanceId } from "./config.js";
+import {
+  requireConfig,
+  isLegacyInstanceId,
+  decodeLegacyInstanceId,
+  API_GATEWAY_URL,
+} from "./config.js";
 
 interface ApiResponse<T> {
   data: T;
   error?: { code: string; message: string } | string;
+  // RFC 7807 fields
+  type?: string;
+  title?: string;
+  detail?: string;
+  status?: number;
   message?: string;
 }
 
 function extractError(body: ApiResponse<unknown>): string {
+  // RFC 7807 format
+  if (body.detail) return body.detail;
+  // Legacy format
   if (body.error) {
     if (typeof body.error === "object" && body.error.message) {
       return body.error.message;
@@ -19,18 +32,42 @@ function extractError(body: ApiResponse<unknown>): string {
   return "Unknown error";
 }
 
+/**
+ * Resolve the base URL and headers for an Instance ID.
+ * - New short IDs (e.g. "leanstack"): route through api.jetstack.ai with X-Instance-Id header
+ * - Legacy base64 IDs: decode to direct URL (backward compat)
+ */
+function resolveInstance(instanceId: string): {
+  baseUrl: string;
+  extraHeaders: Record<string, string>;
+} {
+  if (isLegacyInstanceId(instanceId)) {
+    // Legacy: base64 → direct URL, no gateway
+    return {
+      baseUrl: decodeLegacyInstanceId(instanceId).replace(/\/$/, ""),
+      extraHeaders: {},
+    };
+  }
+  // New: route through API gateway
+  return {
+    baseUrl: API_GATEWAY_URL,
+    extraHeaders: { "X-Instance-Id": instanceId },
+  };
+}
+
 export async function apiRequest<T>(
   method: "GET" | "POST" | "PUT" | "DELETE",
   path: string,
   body?: unknown
 ): Promise<T> {
   const config = requireConfig();
-  const baseUrl = decodeInstanceId(config.instanceId);
+  const { baseUrl, extraHeaders } = resolveInstance(config.instanceId);
   const url = `${baseUrl}${path}`;
 
   const headers: Record<string, string> = {
     Authorization: `Bearer ${config.accessToken}`,
     "Content-Type": "application/json",
+    ...extraHeaders,
   };
 
   const options: RequestInit = {
@@ -81,12 +118,13 @@ export async function apiRequestRaw<T>(
   path: string,
   body?: unknown
 ): Promise<{ ok: boolean; status: number; data?: T; error?: string }> {
-  const baseUrl = decodeInstanceId(instanceId);
+  const { baseUrl, extraHeaders } = resolveInstance(instanceId);
   const url = `${baseUrl}${path}`;
 
   const headers: Record<string, string> = {
     Authorization: `Bearer ${accessToken}`,
     "Content-Type": "application/json",
+    ...extraHeaders,
   };
 
   const options: RequestInit = {
