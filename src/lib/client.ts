@@ -4,6 +4,12 @@ import {
   decodeLegacyInstanceId,
   API_GATEWAY_URL,
 } from "./config.js";
+import { VERSION } from "./version.js";
+
+const CLIENT_HEADERS = {
+  "User-Agent": `jetstackai-cli/${VERSION}`,
+  "X-Source": "cli",
+} as const;
 
 interface ApiResponse<T> {
   data: T;
@@ -65,6 +71,7 @@ export async function apiRequest<T>(
   const url = `${baseUrl}${path}`;
 
   const headers: Record<string, string> = {
+    ...CLIENT_HEADERS,
     Authorization: `Bearer ${config.accessToken}`,
     "Content-Type": "application/json",
     ...extraHeaders,
@@ -122,6 +129,7 @@ export async function apiRequestRaw<T>(
   const url = `${baseUrl}${path}`;
 
   const headers: Record<string, string> = {
+    ...CLIENT_HEADERS,
     Authorization: `Bearer ${accessToken}`,
     "Content-Type": "application/json",
     ...extraHeaders,

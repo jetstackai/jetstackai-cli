@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { Command } from "commander";
+import { VERSION } from "./lib/version.js";
 import { authCommand } from "./commands/auth.js";
 import { portalsCommand } from "./commands/portals.js";
 import { hubspotCommand } from "./commands/hubspot.js";
@@ -23,7 +24,7 @@ program
     "JetStack AI dashboard (Settings > API Keys), then use the\n" +
     "commands below to browse, import, and deploy CRM assets."
   )
-  .version("0.4.0");
+  .version(VERSION);
 
 program.addHelpText(
   "after",
