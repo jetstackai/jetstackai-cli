@@ -255,6 +255,62 @@ profilesCommand
     }
   );
 
+// ─── profiles mermaid ────────────────────────────────────────────────
+
+profilesCommand
+  .command("mermaid <id>")
+  .description("Get Mermaid flowchart for an imported workflow")
+  .option("--format <format>", 'Output format: "json" or "text" (default: text)')
+  .action(
+    async (
+      id: string,
+      options: { format?: string }
+    ) => {
+      requireConfig();
+      const path = `/v1/assets/workflows/${id}/mermaid`;
+      const response = await apiRequest<{ mermaid: string; cached: boolean }>("GET", path);
+
+      if (options.format === "json") {
+        printJson(response);
+        return;
+      }
+
+      console.log(response.mermaid);
+    }
+  );
+
+// ─── profiles preview-mermaid ───────────────────────────────────────
+
+profilesCommand
+  .command("preview-mermaid <portalId> <workflowId>")
+  .description("Preview Mermaid flowchart for a HubSpot workflow (without importing)")
+  .option("--format <format>", 'Output format: "json" or "text" (default: text)')
+  .action(
+    async (
+      portalId: string,
+      workflowId: string,
+      options: { format?: string }
+    ) => {
+      requireConfig();
+      const path = `/v1/hubspot/${portalId}/workflows/${workflowId}/mermaid`;
+      const response = await apiRequest<{
+        mermaid: string;
+        workflowName: string;
+        workflowId: string;
+        isEnabled: boolean;
+        actionCount: number;
+      }>("GET", path);
+
+      if (options.format === "json") {
+        printJson(response);
+        return;
+      }
+
+      console.log(bold(`\n${response.workflowName} (${response.actionCount} actions, ${response.isEnabled ? "enabled" : "disabled"})\n`));
+      console.log(response.mermaid);
+    }
+  );
+
 // ─── Helpers ────────────────────────────────────────────────────────
 
 function truncateList(items?: string[], maxLen = 40): string {
