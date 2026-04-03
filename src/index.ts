@@ -13,6 +13,7 @@ import { mappingCommand } from "./commands/mapping.js";
 import { tasksCommand } from "./commands/tasks.js";
 import { auditsCommand } from "./commands/audits.js";
 import { salesforceCommand } from "./commands/salesforce.js";
+import { profilesCommand } from "./commands/profiles.js";
 
 const program = new Command();
 
@@ -78,5 +79,6 @@ program.addCommand(mappingCommand);
 program.addCommand(tasksCommand);
 program.addCommand(auditsCommand);
 program.addCommand(salesforceCommand);
+program.addCommand(profilesCommand);
 
 program.parse();
