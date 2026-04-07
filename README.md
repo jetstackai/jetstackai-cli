@@ -1,6 +1,6 @@
 # JetStack AI CLI
 
-Manage HubSpot assets programmatically via the command line.
+Manage HubSpot and Salesforce assets programmatically via the command line.
 
 ## Installation
 
@@ -167,9 +167,54 @@ jetstackai profiles preview-mermaid abc123 12345
 
 ### Salesforce
 
+The `salesforce` command (alias: `sf`) provides full Salesforce org management.
+
 | Command | Description |
 |---------|-------------|
-| `jetstackai salesforce list` | List Salesforce connections |
+| `jetstackai sf list` | List connected Salesforce orgs |
+| `jetstackai sf browse <connId> <assetType>` | Browse assets in a Salesforce org |
+| `jetstackai sf import start --connection <id> --assets <pairs> --name <name>` | Import SF assets to library |
+| `jetstackai sf import status <taskId> [--watch]` | Check/watch SF import progress |
+| `jetstackai sf deploy start --name <name> --target <id> --assets <pairs>` | Deploy SF assets to target org |
+| `jetstackai sf deploy status <taskId> [--watch]` | Check/watch SF deploy progress |
+| `jetstackai sf mapping structure --assets <pairs>` | Get mapping requirements |
+| `jetstackai sf mapping destinations --connection <id> --type <type>` | Get mapping targets from target org |
+| `jetstackai sf fieldsets list` | List Property Sets |
+| `jetstackai sf fieldsets get <id>` | Get Property Set details |
+| `jetstackai sf fieldsets delete <id>` | Delete a Property Set |
+
+Supported browse types: `objects`, `fields`, `salesProcesses`, `leadProcesses`, `supportProcesses`, `recordTypes`
+
+Asset pair format: `type:id,type:id` (e.g., `objects:JS_Project__c,salesProcesses:019gK...`)
+
+```bash
+# List Salesforce connections
+jetstackai sf list --format table
+
+# Browse custom objects
+jetstackai sf browse abc123 objects --format table
+
+# Browse fields for a specific object
+jetstackai sf browse abc123 fields --object-type Account
+
+# Import custom objects
+jetstackai sf import start --connection abc123 --assets "objects:JS_Project__c,objects:JS_Task__c" --name "Q1 Import"
+
+# Watch import progress
+jetstackai sf import status task123 --watch
+
+# Get mapping requirements before deploy
+jetstackai sf mapping structure --assets "objects:JS_Client__c" --format table
+
+# Get Record Types available in target org
+jetstackai sf mapping destinations --connection def456 --type recordTypes --format table
+
+# Deploy with mapping
+jetstackai sf deploy start --name "Prod Deploy" --target def456 --assets "objects:JS_Project__c" --mapping '{"recordTypes":{"012src":"012tgt"}}'
+
+# Watch deploy progress
+jetstackai sf deploy status task456 --watch
+```
 
 ## Output Formats
 

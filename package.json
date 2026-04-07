@@ -1,6 +1,6 @@
 {
   "name": "@jetstackai/cli",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "description": "JetStack AI CLI - Manage CRM assets programmatically",
   "type": "module",
   "bin": {
@@ -19,8 +19,20 @@
     "typescript": "^5.7.2",
     "@types/node": "^22.0.0"
   },
-  "files": ["dist", "README.md", "LICENSE", "claude-code-setup"],
-  "keywords": ["jetstackai", "hubspot", "salesforce", "cli", "crm", "asset-management"],
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "claude-code-setup"
+  ],
+  "keywords": [
+    "jetstackai",
+    "hubspot",
+    "salesforce",
+    "cli",
+    "crm",
+    "asset-management"
+  ],
   "license": "MIT",
   "repository": {
     "type": "git",

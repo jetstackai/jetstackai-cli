@@ -56,9 +56,22 @@ Audit Workflow:
                                                     Run audit and watch progress
   5. jetstackai audits data <auditRunId>            Fetch audit results
 
-Supported asset types for browse:
+Salesforce Workflow:
+  1. jetstackai sf list                            List connected Salesforce orgs
+  2. jetstackai sf browse <connId> objects          Browse custom objects
+  3. jetstackai sf import start --connection <id> --assets objects:Obj__c --name "Import"
+  4. jetstackai sf import status <taskId> --watch   Watch import progress
+  5. jetstackai sf deploy start --name "Deploy" --target <connId> --assets objects:Obj__c
+  6. jetstackai sf deploy status <taskId> --watch   Watch deploy progress
+  7. jetstackai sf mapping structure --assets objects:Obj__c
+  8. jetstackai sf mapping destinations --connection <id> --type recordTypes
+
+Supported HubSpot asset types:
   workflows, forms, emails, lists, pipelines, pages, templates,
   blogPosts, hubdbTables, properties, propertyGroups, customObjects
+
+Supported Salesforce asset types:
+  objects, fields, salesProcesses, leadProcesses, supportProcesses, recordTypes
 
 Examples:
   $ jetstackai hubspot browse abc123 workflows --format table
