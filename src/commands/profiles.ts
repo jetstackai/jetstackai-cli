@@ -311,6 +311,129 @@ profilesCommand
     }
   );
 
+// ─── profiles sf-scan ─────────────────────────────────────────────
+
+const SF_PROFILE_ASSET_TYPES = ["sf_flows", "sf_objects", "sf_pageLayouts"];
+
+profilesCommand
+  .command("sf-scan <connectionId> <assetType>")
+  .description(
+    `Scan a Salesforce org for asset profiles. Types: ${SF_PROFILE_ASSET_TYPES.join(", ")}`
+  )
+  .option("--fresh", "Force fresh fetch (bypass 24h cache)")
+  .option("--format <format>", 'Output format: "json" or "table"')
+  .action(
+    async (
+      connectionId: string,
+      assetType: string,
+      options: { fresh?: boolean; format?: string }
+    ) => {
+      const config = requireConfig();
+      const format = options.format || config.defaultFormat || "json";
+
+      if (!SF_PROFILE_ASSET_TYPES.includes(assetType)) {
+        printError(
+          `Unsupported SF asset type: ${assetType}\nSupported: ${SF_PROFILE_ASSET_TYPES.join(", ")}`
+        );
+        process.exit(1);
+      }
+
+      const params = new URLSearchParams();
+      if (options.fresh) params.set("fresh", "true");
+
+      const qs = params.toString();
+      const path = `/v1/salesforce/${connectionId}/${assetType}/profiles${qs ? `?${qs}` : ""}`;
+
+      const response = await apiRequest<ScanProfilesResponse>("GET", path);
+      const items = response.profiles ?? [];
+
+      if (format === "json") {
+        printJson(response);
+        return;
+      }
+
+      const source =
+        response.meta?.source === "cache"
+          ? `cache (${response.meta?.age})`
+          : "live";
+      console.log(
+        bold(
+          `\nSF Profiles for ${assetType} (${items.length} found, source: ${source})\n`
+        )
+      );
+      printTable(
+        ["Name", "Type", "Properties", "Imported"],
+        items.map((p) => [
+          p.name || "-",
+          p.assetType || "-",
+          String(p.propertiesReferenced?.length ?? 0),
+          p.id ? "yes" : "no",
+        ])
+      );
+      console.log(dim(`\nTotal: ${response.total}`));
+    }
+  );
+
+// ─── profiles sf-mermaid ──────────────────────────────────────────
+
+profilesCommand
+  .command("sf-mermaid <id>")
+  .description("Get Mermaid flowchart for an imported Salesforce Flow")
+  .option("--format <format>", 'Output format: "json" or "text" (default: text)')
+  .action(async (id: string, options: { format?: string }) => {
+    requireConfig();
+    const path = `/v1/assets/sf_flows/${id}/mermaid`;
+    const response = await apiRequest<{ mermaid: string; cached: boolean }>(
+      "GET",
+      path
+    );
+
+    if (options.format === "json") {
+      printJson(response);
+      return;
+    }
+
+    console.log(response.mermaid);
+  });
+
+// ─── profiles sf-preview-mermaid ──────────────────────────────────
+
+profilesCommand
+  .command("sf-preview-mermaid <connectionId> <flowApiName>")
+  .description(
+    "Preview Mermaid flowchart for a Salesforce Flow (without importing)"
+  )
+  .option("--format <format>", 'Output format: "json" or "text" (default: text)')
+  .action(
+    async (
+      connectionId: string,
+      flowApiName: string,
+      options: { format?: string }
+    ) => {
+      requireConfig();
+      const path = `/v1/salesforce/${connectionId}/flows/${flowApiName}/mermaid`;
+      const response = await apiRequest<{
+        mermaid: string;
+        flowName: string;
+        flowApiName: string;
+        isActive: boolean;
+        elementCount: number;
+      }>("GET", path);
+
+      if (options.format === "json") {
+        printJson(response);
+        return;
+      }
+
+      console.log(
+        bold(
+          `\n${response.flowName} (${response.elementCount} elements, ${response.isActive ? "active" : "draft"})\n`
+        )
+      );
+      console.log(response.mermaid);
+    }
+  );
+
 // ─── Helpers ────────────────────────────────────────────────────────
 
 function truncateList(items?: string[], maxLen = 40): string {

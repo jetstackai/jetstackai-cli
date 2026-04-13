@@ -99,6 +99,8 @@ const SF_BROWSE_TYPES = [
   "leadProcesses",
   "supportProcesses",
   "recordTypes",
+  "pageLayouts",
+  "flows",
 ];
 
 // =============================================================================
@@ -273,6 +275,37 @@ salesforceCommand
           ])
         );
         break;
+      case "pageLayouts": {
+        const layouts =
+          (response as unknown as { pageLayouts?: Record<string, unknown>[] })
+            .pageLayouts ?? items;
+        printTable(
+          ["Name", "Object", "Full Name", "Namespace"],
+          layouts.map((l) => [
+            String(l.name),
+            String(l.objectApiName ?? "—"),
+            String(l.fullName ?? "—"),
+            String(l.namespacePrefix ?? "—"),
+          ])
+        );
+        break;
+      }
+      case "flows": {
+        const flows =
+          (response as unknown as { flows?: Record<string, unknown>[] })
+            .flows ?? items;
+        printTable(
+          ["API Name", "Label", "Process Type", "Trigger", "Active"],
+          flows.map((f) => [
+            String(f.developerName ?? f.id),
+            String(f.label),
+            String(f.processType ?? "—"),
+            String(f.triggerType ?? "—"),
+            f.isActive ? "Yes" : "No",
+          ])
+        );
+        break;
+      }
       default:
         printTable(
           ["ID", "Name"],
@@ -362,6 +395,8 @@ sfDeployCmd
   )
   .option("--source <id>", "Source connection ID (auto-detected if omitted)")
   .option("--mapping <json>", "Mapping JSON: { recordTypes: {}, users: {} }")
+  .option("--activate-flows", "Deploy flows as Active instead of Draft")
+  .option("--validate", "Run pre-flight validation (checkOnly) before deploying")
   .option("-f, --format <format>", "Output format: json or table")
   .action(async (options) => {
     const config = requireConfig();
@@ -378,12 +413,17 @@ sfDeployCmd
       }
     }
 
+    const deployOptions: Record<string, boolean> = {};
+    if (options.activateFlows) deployOptions.activateFlows = true;
+    if (options.validate) deployOptions.validateBeforeDeploy = true;
+
     const body = {
       name: options.name,
       sourceConnectionId: options.source || options.target,
       targetConnectionId: options.target,
       assets,
       ...(mapping && { mapping }),
+      ...(Object.keys(deployOptions).length > 0 && { deployOptions }),
     };
 
     const response = await apiRequest<StartResponse>(
@@ -526,6 +566,82 @@ sfMappingCmd
       ])
     );
     console.log(dim(`\nTotal: ${opts.length}`));
+  });
+
+sfMappingCmd
+  .command("validate")
+  .description("Validate mapping against the target Salesforce org")
+  .requiredOption("--target <id>", "Target Salesforce connection ID")
+  .requiredOption(
+    "--assets <pairs>",
+    'Asset pairs: "objects:Obj__c,flows:MyFlow"'
+  )
+  .requiredOption("--mapping <json>", "Mapping JSON to validate")
+  .option("-f, --format <format>", "Output format: json or table")
+  .action(async (options) => {
+    const config = requireConfig();
+    const format = options.format || config.defaultFormat || "json";
+
+    const assets = parseAssetPairs(options.assets);
+    let mapping: Record<string, unknown>;
+    try {
+      mapping = JSON.parse(options.mapping);
+    } catch {
+      printError("Invalid --mapping JSON");
+      process.exit(1);
+    }
+
+    const response = await apiRequest<{
+      validation: {
+        isValid: boolean;
+        blockers: Array<{ type: string; sourceValue: string; message: string }>;
+        warnings: Array<{
+          type: string;
+          sourceValue: string;
+          message: string;
+          suggestion?: string;
+        }>;
+      };
+    }>("POST", "/v1/salesforce/mapping/validate", {
+      targetConnectionId: options.target,
+      assets,
+      mapping,
+    });
+
+    if (format === "json") {
+      printJson(response);
+      return;
+    }
+
+    const { validation } = response;
+    if (validation.isValid) {
+      printSuccess("Mapping validation passed — no blockers found.");
+    } else {
+      printError(
+        `Mapping validation failed — ${validation.blockers.length} blocker(s) found.`
+      );
+    }
+
+    if (validation.blockers.length > 0) {
+      console.log(bold("\nBlockers (must fix before deploying):\n"));
+      printTable(
+        ["Type", "Source", "Message"],
+        validation.blockers.map((b) => [b.type, b.sourceValue, b.message])
+      );
+    }
+
+    if (validation.warnings.length > 0) {
+      console.log(bold("\nWarnings:\n"));
+      printTable(
+        ["Type", "Source", "Message", "Suggestion"],
+        validation.warnings.map((w) => [
+          w.type,
+          w.sourceValue,
+          w.message,
+          w.suggestion ?? "—",
+        ])
+      );
+    }
   });
 
 // =============================================================================
