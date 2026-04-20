@@ -71,7 +71,10 @@ Supported HubSpot asset types:
   blogPosts, hubdbTables, properties, propertyGroups, customObjects
 
 Supported Salesforce asset types:
-  objects, fields, salesProcesses, leadProcesses, supportProcesses, recordTypes
+  objects, fields, salesProcesses, leadProcesses, supportProcesses, recordTypes,
+  pageLayouts, flows, reports, dashboards, emailTemplates, letterheads,
+  globalValueSets, standardValueSets, validationRules, pathAssistants,
+  permissionSets, flexiPages, roles, settings
 
 Examples:
   $ jetstackai hubspot browse abc123 workflows --format table

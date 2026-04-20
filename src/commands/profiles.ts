@@ -313,7 +313,23 @@ profilesCommand
 
 // ─── profiles sf-scan ─────────────────────────────────────────────
 
-const SF_PROFILE_ASSET_TYPES = ["sf_flows", "sf_objects", "sf_pageLayouts"];
+const SF_PROFILE_ASSET_TYPES = [
+  "sf_objects",
+  "sf_flows",
+  "sf_pageLayouts",
+  "sf_reports",
+  "sf_dashboards",
+  "sf_emailTemplates",
+  "sf_letterheads",
+  "sf_globalValueSets",
+  "sf_standardValueSets",
+  "sf_validationRules",
+  "sf_pathAssistants",
+  "sf_permissionSets",
+  "sf_flexiPages",
+  "sf_roles",
+  "sf_settings",
+];
 
 profilesCommand
   .command("sf-scan <connectionId> <assetType>")

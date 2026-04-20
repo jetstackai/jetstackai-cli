@@ -1,6 +1,6 @@
 {
   "name": "@jetstackai/cli",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "JetStack AI CLI - Manage CRM assets programmatically",
   "type": "module",
   "bin": {

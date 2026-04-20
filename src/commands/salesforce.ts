@@ -101,6 +101,18 @@ const SF_BROWSE_TYPES = [
   "recordTypes",
   "pageLayouts",
   "flows",
+  "reports",
+  "dashboards",
+  "emailTemplates",
+  "letterheads",
+  "globalValueSets",
+  "standardValueSets",
+  "validationRules",
+  "pathAssistants",
+  "permissionSets",
+  "flexiPages",
+  "roles",
+  "settings",
 ];
 
 // =============================================================================
@@ -207,7 +219,12 @@ salesforceCommand
     }
 
     const response = await apiRequest<BrowseResponse>("GET", path);
-    const items = response.items ?? [];
+    // API returns data under type-specific keys (e.g., validationRules, standardValueSets)
+    // or under 'items' for some types. Normalize to a single array.
+    const items: Record<string, unknown>[] =
+      response.items ??
+      (response as unknown as Record<string, unknown>)[assetType] as Record<string, unknown>[] ??
+      [];
 
     if (format === "json") {
       printJson(response);
@@ -306,10 +323,93 @@ salesforceCommand
         );
         break;
       }
+      case "validationRules":
+        printTable(
+          ["ID", "Name", "Object", "Active"],
+          items.map((v) => [
+            String(v.id),
+            String(v.validationName),
+            String(v.objectApiName ?? "—"),
+            String(v.isActive ? "Yes" : "No"),
+          ])
+        );
+        break;
+      case "standardValueSets":
+        printTable(
+          ["Name", "Label", "Values"],
+          items.map((s) => [
+            String(s.name),
+            String(s.label),
+            String(s.valueCount ?? 0),
+          ])
+        );
+        break;
+      case "globalValueSets":
+        printTable(
+          ["API Name", "Label", "Description"],
+          items.map((g) => [
+            String(g.apiName),
+            String(g.label),
+            String(g.description ?? "—"),
+          ])
+        );
+        break;
+      case "pathAssistants":
+        printTable(
+          ["Name", "Object", "Field", "Active"],
+          items.map((p) => [
+            String(p.masterLabel ?? p.developerName),
+            String(p.targetObject ?? "—"),
+            String(p.targetField ?? "—"),
+            String(p.isActive ? "Yes" : "No"),
+          ])
+        );
+        break;
+      case "permissionSets":
+        printTable(
+          ["Name", "Label", "Description"],
+          items.map((p) => [
+            String(p.name),
+            String(p.label),
+            String(p.description ?? "—"),
+          ])
+        );
+        break;
+      case "flexiPages":
+        printTable(
+          ["API Name", "Label", "Object", "Type"],
+          items.map((f) => [
+            String(f.developerName),
+            String(f.label),
+            String(f.objectApiName ?? "—"),
+            String(f.type ?? "—"),
+          ])
+        );
+        break;
+      case "roles":
+        printTable(
+          ["API Name", "Name", "Parent"],
+          items.map((r) => [
+            String(r.developerName),
+            String(r.name),
+            String(r.parentRoleName ?? "—"),
+          ])
+        );
+        break;
+      case "settings":
+        printTable(
+          ["Type", "Label", "Available"],
+          items.map((s) => [
+            String(s.settingsType),
+            String(s.label),
+            String(s.available ? "Yes" : "No"),
+          ])
+        );
+        break;
       default:
         printTable(
           ["ID", "Name"],
-          items.map((a) => [String(a.id), String(a.name)])
+          items.map((a) => [String(a.id ?? a.apiName ?? "—"), String(a.name ?? a.label ?? "—")])
         );
     }
 
