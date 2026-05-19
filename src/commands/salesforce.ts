@@ -6,6 +6,7 @@
  */
 
 import { createCommand } from "commander";
+import * as readline from "node:readline";
 import { apiRequest } from "../lib/client.js";
 import { requireConfig } from "../lib/config.js";
 import {
@@ -13,8 +14,10 @@ import {
   printTable,
   printSuccess,
   printError,
+  printTree,
   bold,
   dim,
+  type TreeRenderNode,
 } from "../lib/output.js";
 
 // =============================================================================
@@ -44,6 +47,24 @@ interface BrowseResponse {
   total: number;
 }
 
+interface SfPreviewPlanItem {
+  assetType: string;
+  assetId: string;
+}
+
+interface SfPreviewPlanLevel {
+  level: number;
+  items: SfPreviewPlanItem[];
+  kindCounts: Record<string, number>;
+}
+
+interface SfPreviewPlan {
+  totalAssets: number;
+  levelCount: number;
+  levels: SfPreviewPlanLevel[];
+  unresolved: Array<{ assetType: string; assetId: string; reason: string }>;
+}
+
 interface TaskResponse {
   id: string;
   name: string;
@@ -55,6 +76,8 @@ interface TaskResponse {
   createdBy: string;
   createdAt: string;
   completedAt?: string;
+  /** B.1.2: populated on previewOnly deploy tasks after the dep walk. */
+  sfPreviewPlan?: SfPreviewPlan;
 }
 
 interface StartResponse {
@@ -93,6 +116,7 @@ interface MappingDestinationsResponse {
 // =============================================================================
 
 const SF_BROWSE_TYPES = [
+  // Phase 1
   "objects",
   "fields",
   "salesProcesses",
@@ -113,6 +137,73 @@ const SF_BROWSE_TYPES = [
   "flexiPages",
   "roles",
   "settings",
+  // Phase 2A code/UI tier
+  "apexClasses",
+  "apexTriggers",
+  "visualforcePages",
+  "lwcBundles",
+  "auraBundles",
+  "staticResources",
+  // Phase 2A leaf-metadata tier
+  "customLabels",
+  "customPermissions",
+  "compactLayouts",
+  // Phase 2A binary tier
+  "documents",
+  "contentAssets",
+  // Phase 2A custom-metadata tier
+  "customMetadataTypes",
+  "customMetadataRecords",
+  // Phase 2B identity + UI tier
+  "folders",
+  "groups",
+  "queues",
+  "quickActions",
+  "webLinks",
+  "listViews",
+  "audiences",
+  "customTabs",
+  "customApplications",
+  // Phase 2B communication tier
+  "orgWideEmailAddresses",
+  "customNotificationTypes",
+  // Phase 2B time/data tier
+  "businessHours",
+  "holidays",
+  // Phase 2B identity-integration tier
+  "namedCredentials",
+  "externalCredentials",
+  // Phase 3 — Identity tier
+  "profiles",
+  "permissionSetGroups",
+  "mutingPermissionSets",
+  // Phase 3 — Workflow / Approval tier
+  "workflowAlerts",
+  "workflowFieldUpdates",
+  "workflowTasks",
+  "workflowOutboundMessages",
+  "workflowRules",
+  "approvalProcesses",
+  // Phase 3 — Rules tier
+  "assignmentRules",
+  "autoResponseRules",
+  "escalationRules",
+  "duplicateRules",
+  "matchingRules",
+  // Phase 4 — Sharing + Analytics tier
+  //
+  // Only the SObject-backed ones surface here. SharingCriteriaRule /
+  // SharingOwnerRule / SharingTerritoryRule / SharingGuestRule and the
+  // four Translation sub-types live behind Metadata API listMetadata
+  // (not a queryable SObject) — the backend BROWSE_REGISTRY intentionally
+  // skips them per `fetchSfGeneric.ts` NOTE. They are still importable
+  // via `sf import start --assets sharingCriteriaRules:Object.Rule,...`
+  // and the recursive dep walker pulls them in automatically when a
+  // depended-on parent gets imported. To add a top-level browse, the
+  // backend needs a SOAP listMetadata helper.
+  "sharingSets",
+  "reportTypes",
+  "analyticSnapshots",
 ];
 
 // =============================================================================
@@ -477,6 +568,188 @@ sfImportCmd
   });
 
 // =============================================================================
+// salesforce modules preview
+// =============================================================================
+//
+// Read-only walk of the dependency graph stored on each imported asset doc.
+// Mirrors the deploy-time dep-walk so users can see what _will_ ship without
+// queueing a real Cloud Task. Backend handler: POST /v1/salesforce/modules/preview.
+
+interface SfModulesPreviewTreeNode {
+  type: string;
+  id: string;
+  name?: string;
+  label?: string;
+  mappingState: "leaf" | "mapping-required" | "auto-resolvable" | "missing";
+  truncated?: boolean;
+  children: SfModulesPreviewTreeNode[];
+}
+
+interface SfModulesPreviewMappingItem {
+  type: string;
+  sourceValue: string;
+  displayLabel: string;
+  reason: string;
+  isMandatory: boolean;
+  isAutoResolvable: boolean;
+  objectContext?: string;
+}
+
+interface SfModulesPreviewResponse {
+  root: {
+    type: string;
+    id: string;
+    name?: string;
+    label?: string;
+  } | null;
+  tree: SfModulesPreviewTreeNode[];
+  flatCount: Record<string, number>;
+  totalAssets: number;
+  mappingsRequired: number;
+  mappings: SfModulesPreviewMappingItem[];
+  unresolved: Array<{ type: string; ref: string; reason: string }>;
+}
+
+const sfModulesCmd = salesforceCommand
+  .command("modules")
+  .description(
+    "Inspect the dep graph of imported Salesforce assets without running a deploy."
+  );
+
+sfModulesCmd
+  .command("preview")
+  .description(
+    "Walk the dependency tree of an imported root asset. Reports total assets, mappings required, and unresolved deps that would block a deploy."
+  )
+  .requiredOption(
+    "--root-asset <typeAndId>",
+    'Root asset to walk. Format: "<assetType>:<assetId>". Example: "sf_flows:Demo1_Opp_Auto_Assign"'
+  )
+  .option(
+    "--max-depth <n>",
+    "Cap recursion depth (default: 5; cycle detection runs independently)"
+  )
+  .option("-f, --format <format>", "Output format: json or table")
+  .action(async (options) => {
+    const config = requireConfig();
+    const format = options.format || config.defaultFormat || "json";
+
+    const [type, ...idParts] = String(options.rootAsset).split(":");
+    const id = idParts.join(":");
+    if (!type || !id) {
+      printError(
+        `Invalid --root-asset "${options.rootAsset}". Expected "<assetType>:<assetId>" (e.g. "sf_flows:Demo1_Opp_Auto_Assign").`
+      );
+      process.exit(1);
+    }
+
+    const body: Record<string, unknown> = { rootAsset: { type, id } };
+    if (options.maxDepth) {
+      const n = Number(options.maxDepth);
+      if (!Number.isFinite(n) || n <= 0) {
+        printError(`Invalid --max-depth ${options.maxDepth}`);
+        process.exit(1);
+      }
+      body.maxDepth = n;
+    }
+
+    const response = await apiRequest<SfModulesPreviewResponse>(
+      "POST",
+      "/v1/salesforce/modules/preview",
+      body
+    );
+
+    if (format === "json") {
+      printJson(response);
+      return;
+    }
+
+    printModulesPreview(response);
+  });
+
+function printModulesPreview(r: SfModulesPreviewResponse): void {
+  if (!r.root) {
+    printError(
+      "Root asset not found in library. Run `jetstackai sf import start` to add it first."
+    );
+    return;
+  }
+
+  console.log("");
+  console.log(bold("Module preview:"));
+  console.log(
+    `  Root:       ${r.root.type}:${r.root.id}${
+      r.root.name ? dim(` (${r.root.name})`) : ""
+    }`
+  );
+  console.log(
+    `  Total:      ${r.totalAssets} asset${r.totalAssets === 1 ? "" : "s"}`
+  );
+  console.log(
+    `  Mappings:   ${r.mappingsRequired} required input${
+      r.mappingsRequired === 1 ? "" : "s"
+    } before deploy`
+  );
+  console.log(
+    `  Unresolved: ${r.unresolved.length} branch${
+      r.unresolved.length === 1 ? "" : "es"
+    } missing from library`
+  );
+
+  console.log("");
+  console.log(bold("Tree:"));
+  for (const top of r.tree) {
+    printTree(treeNodeToRender(top));
+  }
+
+  if (r.unresolved.length > 0) {
+    console.log("");
+    console.log(bold("Unresolved deps (import these before deploy):"));
+    const rows = r.unresolved.map((u) => [u.type, u.ref, u.reason]);
+    printTable(["Type", "Ref", "Reason"], rows);
+  }
+
+  if (r.mappings.length > 0) {
+    console.log("");
+    console.log(bold("Required user mappings:"));
+    const rows = r.mappings.map((m) => [
+      m.type,
+      m.sourceValue,
+      m.displayLabel,
+      m.isMandatory ? "yes" : "no",
+      m.isAutoResolvable ? "yes" : "no",
+    ]);
+    printTable(
+      ["Type", "Source", "Display", "Mandatory", "Auto-resolvable"],
+      rows
+    );
+  }
+
+  if (Object.keys(r.flatCount).length > 0) {
+    console.log("");
+    console.log(bold("Per-type counts:"));
+    const rows = Object.entries(r.flatCount)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([k, v]) => [k, String(v)]);
+    printTable(["Asset type", "Count"], rows);
+  }
+}
+
+function treeNodeToRender(node: SfModulesPreviewTreeNode): TreeRenderNode {
+  const hintParts: string[] = [];
+  if (node.mappingState !== "leaf") hintParts.push(node.mappingState);
+  if (node.truncated) hintParts.push("truncated");
+  const label = `${node.type}:${node.id}${
+    node.name && node.name !== node.id ? dim(` (${node.name})`) : ""
+  }`;
+  return {
+    label,
+    hint: hintParts.length > 0 ? `[${hintParts.join(", ")}]` : undefined,
+    children: (node.children ?? []).map(treeNodeToRender),
+  };
+}
+
+// =============================================================================
 // salesforce deploy start / status
 // =============================================================================
 
@@ -494,9 +767,16 @@ sfDeployCmd
     'Asset pairs: "objects:Obj__c,salesProcesses:Name"'
   )
   .option("--source <id>", "Source connection ID (auto-detected if omitted)")
-  .option("--mapping <json>", "Mapping JSON: { recordTypes: {}, users: {} }")
+  .option(
+    "--mapping <json>",
+    "SfUserMappings JSON. Top-level keys: recordTypes, users, objects, profiles, emailTemplateFolders, emailTemplates, groups (queues land here too), permissionSets, permissionSetIds, groupIds, folders. Each value is a sourceKey→destValue map. groupIds/permissionSetIds are source-SF-ID → target-SF-ID maps used by the Apex hardcoded-ID rewriter (Demo 5)."
+  )
   .option("--activate-flows", "Deploy flows as Active instead of Draft")
   .option("--validate", "Run pre-flight validation (checkOnly) before deploying")
+  .option(
+    "--preview",
+    "Dry-run: run transform + dep-walk but skip Metadata API submit. Outputs the level-grouped deploy plan and per-asset preview payload."
+  )
   .option("-f, --format <format>", "Output format: json or table")
   .action(async (options) => {
     const config = requireConfig();
@@ -516,6 +796,7 @@ sfDeployCmd
     const deployOptions: Record<string, boolean> = {};
     if (options.activateFlows) deployOptions.activateFlows = true;
     if (options.validate) deployOptions.validateBeforeDeploy = true;
+    if (options.preview) deployOptions.previewOnly = true;
 
     const body = {
       name: options.name,
@@ -537,12 +818,313 @@ sfDeployCmd
       return;
     }
 
-    printSuccess(`Deployment started: ${response.task.id}`);
+    if (options.preview) {
+      printSuccess(`Preview started: ${response.task.id}`);
+    } else {
+      printSuccess(`Deployment started: ${response.task.id}`);
+    }
     console.log(`  Name: ${response.task.name}`);
     console.log(`  Target: ${response.task.portalName}`);
     console.log(`  Assets: ${response.task.progress.total}`);
+    if (options.preview) {
+      console.log(
+        dim(
+          `\nWatch and inspect plan: jetstackai sf deploy status ${response.task.id} --watch`
+        )
+      );
+    } else {
+      console.log(
+        dim(`\nWatch progress: jetstackai sf deploy status ${response.task.id} --watch`)
+      );
+    }
+  });
+
+// ---------------------------------------------------------------------------
+// B.1.4: `sf deploy interactive` — TTY-driven mapping resolution
+// ---------------------------------------------------------------------------
+
+interface InteractiveMappingItem {
+  type: string;
+  sourceValue: string;
+  displayLabel: string;
+  reason: string;
+  isMandatory: boolean;
+  isAutoResolvable: boolean;
+  objectContext?: string;
+}
+
+interface InteractiveMappingStructureResponse {
+  recordTypes?: InteractiveMappingItem[];
+  users?: InteractiveMappingItem[];
+  customObjects?: InteractiveMappingItem[];
+  profiles?: InteractiveMappingItem[];
+  emailTemplateFolders?: InteractiveMappingItem[];
+  queues?: InteractiveMappingItem[];
+  groups?: InteractiveMappingItem[];
+  [bucket: string]: InteractiveMappingItem[] | unknown;
+}
+
+interface DestinationOption {
+  id: string;
+  name: string;
+  label?: string;
+  extra?: string;
+}
+
+interface DestinationsResponse {
+  options: DestinationOption[];
+}
+
+/** Which mapping-structure bucket → destinations endpoint type. */
+const BUCKET_TO_DEST_TYPE: Record<string, string> = {
+  recordTypes: "recordTypes",
+  users: "users",
+  customObjects: "customObjects",
+  profiles: "profiles",
+  emailTemplateFolders: "emailTemplateFolders",
+  emailTemplates: "emailTemplates",
+  queues: "queues",
+  groups: "groups",
+  permissionSets: "permissionSets",
+  folders: "folders",
+};
+
+/**
+ * Which mapping-structure bucket → SfUserMappings record key.
+ * `groupIds` / `permissionSetIds` are the Demo 5 apex remap fields
+ * (rewriter looks up 00G / 0PS by source SF ID, not DevName); the bucket
+ * names mirror the structure response so the interactive picker can route
+ * cleanly.
+ */
+const BUCKET_TO_MAPPING_KEY: Record<string, string> = {
+  recordTypes: "recordTypes",
+  users: "users",
+  customObjects: "objects",
+  profiles: "profiles",
+  emailTemplateFolders: "emailTemplateFolders",
+  emailTemplates: "emailTemplates",
+  queues: "groups", // queues land in SfUserMappings.groups
+  groups: "groups",
+  permissionSets: "permissionSets",
+  permissionSetIds: "permissionSetIds",
+  groupIds: "groupIds",
+  folders: "folders",
+};
+
+function makeReadline(): readline.Interface {
+  return readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+}
+
+function ask(rl: readline.Interface, question: string): Promise<string> {
+  return new Promise((resolve) => {
+    rl.question(question, (answer) => resolve(answer.trim()));
+  });
+}
+
+/**
+ * Render candidate options + prompt for selection. Supports:
+ *   - number (1..N) → pick that candidate
+ *   - "s" or empty → skip (only if not mandatory)
+ *   - substring → re-filter the list and re-prompt
+ */
+async function pickDestination(
+  rl: readline.Interface,
+  item: InteractiveMappingItem,
+  candidates: DestinationOption[]
+): Promise<DestinationOption | null> {
+  let filtered = candidates;
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    console.log("");
     console.log(
-      dim(`\nWatch progress: jetstackai sf deploy status ${response.task.id} --watch`)
+      `? ${item.displayLabel} (source: ${item.sourceValue})${item.objectContext ? dim(` [on ${item.objectContext}]`) : ""}`
+    );
+    if (filtered.length === 0) {
+      console.log(dim("  (no candidates)"));
+    } else {
+      const display = filtered.slice(0, 20);
+      display.forEach((c, i) => {
+        const extra = c.extra ? dim(` — ${c.extra}`) : "";
+        const label = c.label && c.label !== c.name ? ` (${c.label})` : "";
+        console.log(`  ${i + 1}. ${c.name}${label}${extra}`);
+      });
+      if (filtered.length > display.length) {
+        console.log(dim(`  …and ${filtered.length - display.length} more`));
+      }
+    }
+    const helpText = item.isMandatory
+      ? "[number to pick / substring to filter]"
+      : "[number to pick / substring to filter / s to skip]";
+    const answer = await ask(rl, `  ${helpText} › `);
+    if (!answer) {
+      if (item.isMandatory) {
+        console.log(dim("  This mapping is required."));
+        continue;
+      }
+      return null;
+    }
+    if (/^[sS]$/.test(answer)) {
+      if (item.isMandatory) {
+        console.log(dim("  Cannot skip: mapping is required."));
+        continue;
+      }
+      return null;
+    }
+    const asNum = Number(answer);
+    if (Number.isInteger(asNum) && asNum >= 1 && asNum <= filtered.length) {
+      return filtered[asNum - 1];
+    }
+    const lc = answer.toLowerCase();
+    const refiltered = candidates.filter(
+      (c) =>
+        c.name.toLowerCase().includes(lc) ||
+        (c.label ?? "").toLowerCase().includes(lc) ||
+        (c.extra ?? "").toLowerCase().includes(lc)
+    );
+    if (refiltered.length === 0) {
+      console.log(dim(`  No match for '${answer}'. Showing full list again.`));
+      filtered = candidates;
+    } else {
+      filtered = refiltered;
+    }
+  }
+}
+
+sfDeployCmd
+  .command("interactive")
+  .description(
+    "Walk required cross-org mappings interactively, then start the deploy. Mirrors `deploy start` but replaces --mapping JSON with TTY pickers (B.1.4)."
+  )
+  .requiredOption("--name <name>", "Deployment name")
+  .requiredOption("--target <id>", "Target Salesforce connection ID")
+  .requiredOption(
+    "--assets <pairs>",
+    'Asset pairs: "objects:Obj__c,salesProcesses:Name"'
+  )
+  .option("--source <id>", "Source connection ID (auto-detected if omitted)")
+  .option("--activate-flows", "Deploy flows as Active instead of Draft")
+  .option("--validate", "Run pre-flight validation (checkOnly) before deploying")
+  .option("--preview", "Resolve mappings interactively but do not deploy")
+  .action(async (options) => {
+    if (!process.stdin.isTTY) {
+      printError(
+        "sf deploy interactive requires a TTY. Pipe-friendly mode: use `sf deploy start --mapping <json>` instead."
+      );
+      process.exit(2);
+    }
+    requireConfig();
+
+    const assets = parseAssetPairs(options.assets);
+
+    // 1. Get mapping requirements.
+    console.log(bold("Resolving mapping requirements..."));
+    const structure = await apiRequest<InteractiveMappingStructureResponse>(
+      "POST",
+      "/v1/salesforce/mapping/structure",
+      { assets }
+    );
+
+    // 2. For each non-empty bucket with unresolved items, fetch candidates
+    //    and prompt the user.
+    const rl = makeReadline();
+    const mapping: Record<string, Record<string, string>> = {};
+    try {
+      const buckets = Object.keys(BUCKET_TO_DEST_TYPE);
+      for (const bucket of buckets) {
+        const itemsRaw = (structure as Record<string, unknown>)[bucket];
+        if (!Array.isArray(itemsRaw) || itemsRaw.length === 0) continue;
+        const items = itemsRaw as InteractiveMappingItem[];
+        const needsResolution = items.filter(
+          (it) => !it.isAutoResolvable
+        );
+        if (needsResolution.length === 0) continue;
+
+        console.log("");
+        console.log(
+          bold(`${bucket} — ${needsResolution.length} item(s) to map:`)
+        );
+
+        // Fetch candidates once per bucket.
+        let candidates: DestinationOption[] = [];
+        try {
+          const destType = BUCKET_TO_DEST_TYPE[bucket];
+          const resp = await apiRequest<DestinationsResponse>(
+            "POST",
+            "/v1/salesforce/mapping/destinations",
+            { connectionId: options.target, type: destType }
+          );
+          candidates = resp.options ?? [];
+        } catch (err) {
+          console.log(
+            dim(
+              `  Could not fetch destinations for ${bucket}: ${
+                err instanceof Error ? err.message : "unknown error"
+              }. Skipping.`
+            )
+          );
+          continue;
+        }
+
+        const mappingKey = BUCKET_TO_MAPPING_KEY[bucket] ?? bucket;
+        for (const item of needsResolution) {
+          const picked = await pickDestination(rl, item, candidates);
+          if (picked) {
+            mapping[mappingKey] = mapping[mappingKey] ?? {};
+            mapping[mappingKey][item.sourceValue] = picked.id;
+          }
+        }
+      }
+    } finally {
+      rl.close();
+    }
+
+    // 3. Submit deploy (or preview).
+    const deployOptions: Record<string, boolean> = {};
+    if (options.activateFlows) deployOptions.activateFlows = true;
+    if (options.validate) deployOptions.validateBeforeDeploy = true;
+    if (options.preview) deployOptions.previewOnly = true;
+
+    const body = {
+      name: options.name,
+      sourceConnectionId: options.source || options.target,
+      targetConnectionId: options.target,
+      assets,
+      ...(Object.keys(mapping).length > 0 && { mapping }),
+      ...(Object.keys(deployOptions).length > 0 && { deployOptions }),
+    };
+
+    console.log("");
+    if (Object.keys(mapping).length === 0) {
+      console.log(
+        dim("(No mappings collected — submitting deploy without --mapping.)")
+      );
+    } else {
+      console.log(
+        dim(
+          `Submitting deploy with ${Object.values(mapping).reduce(
+            (n, m) => n + Object.keys(m).length,
+            0
+          )} mapping(s).`
+        )
+      );
+    }
+    const response = await apiRequest<StartResponse>(
+      "POST",
+      "/v1/salesforce/deploy/start",
+      body
+    );
+    printSuccess(
+      options.preview
+        ? `Preview started: ${response.task.id}`
+        : `Deployment started: ${response.task.id}`
+    );
+    console.log(
+      dim(
+        `\nWatch progress: jetstackai sf deploy status ${response.task.id} --watch`
+      )
     );
   });
 
@@ -626,9 +1208,13 @@ sfMappingCmd
   .requiredOption("--connection <id>", "Target Salesforce connection ID")
   .requiredOption(
     "--type <type>",
-    "Destination type: recordTypes, users, or customObjects"
+    "Destination type: recordTypes, users, customObjects, profiles, emailTemplates, emailTemplateFolders, queues, groups, permissionSets, folders"
   )
   .option("--object-type <name>", "Object API name (for recordTypes)")
+  .option(
+    "--folder-type <kind>",
+    "Folder kind filter (for type=folders): Document | Email | Report | Dashboard | EmailTemplate"
+  )
   .option("-f, --format <format>", "Output format: json or table")
   .action(async (options) => {
     const config = requireConfig();
@@ -640,6 +1226,9 @@ sfMappingCmd
     };
     if (options.objectType) {
       body.objectApiName = options.objectType;
+    }
+    if (options.folderType) {
+      body.folderType = options.folderType;
     }
 
     const response = await apiRequest<MappingDestinationsResponse>(
@@ -871,6 +1460,39 @@ async function watchTask(
       printSuccess("\nTask completed successfully!");
     } else if (task.status === "failed") {
       printError("\nTask failed.");
+    }
+    // B.1.2: render the preview plan if the task carries one.
+    if (task.sfPreviewPlan) {
+      printSfPreviewPlan(task.sfPreviewPlan);
+    }
+  }
+}
+
+/**
+ * Render the level-grouped Salesforce deploy plan returned by a
+ * previewOnly run. Output mirrors the v1.md Demo 3 hero-scene format:
+ *   Level 0: GlobalValueSet (1)
+ *   Level 1: CustomObject:Deal__c (shell)
+ *   ...
+ */
+function printSfPreviewPlan(plan: SfPreviewPlan): void {
+  console.log("");
+  console.log(bold("Deploy plan:"));
+  console.log(
+    dim(`  ${plan.totalAssets} assets, ${plan.levelCount} phases`)
+  );
+  for (const level of plan.levels) {
+    const counts = Object.entries(level.kindCounts)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([k, n]) => `${k.replace(/^sf_/, "")} (${n})`)
+      .join(", ");
+    console.log(`  Level ${level.level}: ${counts}`);
+  }
+  if (plan.unresolved.length > 0) {
+    console.log("");
+    console.log(bold("Unresolved deps:"));
+    for (const u of plan.unresolved) {
+      console.log(`  • ${u.assetType}:${u.assetId} — ${u.reason}`);
     }
   }
 }
