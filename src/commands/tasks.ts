@@ -20,14 +20,14 @@ interface ListTasksResponse {
 }
 
 export const tasksCommand = createCommand("tasks").description(
-  "View background tasks (imports and deployments). Filter by --type (import-assets, deploy-assets) and --status (pending, processing, completed, failed)."
+  "View background tasks (imports and deployments). Filter by --type (import-assets, deploy-assets) and --status (pending, processing, completed, incomplete, failed)."
 );
 
 tasksCommand
   .command("list")
   .description("List all tasks")
   .option("--type <type>", "Filter by type (import-assets, deploy-assets)")
-  .option("--status <status>", "Filter by status (pending, processing, completed, failed)")
+  .option("--status <status>", "Filter by status (pending, processing, completed, incomplete, failed); completed excludes incomplete imports")
   .option("--limit <limit>", "Max results")
   .option("--format <format>", 'Output format: "json" or "table"')
   .action(
