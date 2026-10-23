@@ -8,6 +8,7 @@
   },
   "main": "dist/index.js",
   "scripts": {
+    "test": "npm run build && node --test tests/*.test.mjs",
     "build": "tsc",
     "dev": "tsc --watch",
     "prepublishOnly": "npm run build"

@@ -116,6 +116,12 @@ jetstackai deploy status task123 --watch
 | Command | Description |
 |---------|-------------|
 | `jetstackai tasks list [--type <type>] [--status <status>]` | List background tasks |
+
+Task status filters are exact: `--status completed` returns clean successes only.
+Use `--status incomplete` for terminal imports with omissions, warnings, or
+failed/unresolved dependencies. Omit `--status` to include both. Import and deploy
+`status --watch` stop on `completed`, `incomplete`, `failed`, or `cancelled`;
+an incomplete result is not a clean success and its receipt should be reviewed.
 | `jetstackai tasks get <id>` | Get task details |
 
 ### Audits

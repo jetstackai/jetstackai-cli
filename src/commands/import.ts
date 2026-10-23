@@ -180,7 +180,7 @@ function printTaskStatus(task: TaskResponse, format: string): void {
 
 async function watchTask(taskId: string, format: string): Promise<void> {
   const POLL_INTERVAL = 5000;
-  const TERMINAL_STATUSES = ["completed", "failed", "cancelled"];
+  const TERMINAL_STATUSES = ["completed", "incomplete", "failed", "cancelled"];
 
   // eslint-disable-next-line no-constant-condition
   while (true) {
@@ -194,7 +194,9 @@ async function watchTask(taskId: string, format: string): Promise<void> {
     printTaskStatus(task, format);
 
     if (TERMINAL_STATUSES.includes(task.status)) {
-      console.log(dim("\nTask finished."));
+      console.log(dim(task.status === "incomplete"
+        ? "\nTask finished with omissions or failed/unresolved dependencies. Review the task receipt."
+        : "\nTask finished."));
       break;
     }
 
